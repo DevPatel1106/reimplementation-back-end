@@ -262,16 +262,17 @@ class Assignment < ApplicationRecord
     private
 
     # Quiz is append-only: if quiz is configured and questionnaire exists, queue it first.
+    # This supports both quiz+review (review_map present) and quiz-only contexts.
     def append_quiz_task(queue, participant:, review_map:)
       return unless @assignment.require_quiz
-      return if review_map.nil?
 
       quiz_questionnaire = @assignment.quiz_questionnaire_for_review_flow
       return if quiz_questionnaire.nil?
 
+      reviewee_id = review_map&.reviewee_id || participant.id
       quiz_map = find_or_create_quiz_map(
         participant: participant,
-        review_map: review_map,
+        reviewee_id: reviewee_id,
         quiz_questionnaire: quiz_questionnaire
       )
 
@@ -280,8 +281,8 @@ class Assignment < ApplicationRecord
         assignment_id: @assignment.id,
         response_map_id: quiz_map.id,
         response_map_type: quiz_map.type,
-        review_map_id: review_map.id,
-        reviewee_id: review_map.reviewee_id,
+        review_map_id: review_map&.id,
+        reviewee_id: reviewee_id,
         questionnaire_id: quiz_questionnaire.id,
         participant_id: participant.id
       }
@@ -305,27 +306,22 @@ class Assignment < ApplicationRecord
       }
     end
 
-    # Reuses existing model methods to keep map lookup logic centralized in map models:
-    # - QuizResponseMap.mappings_for_reviewer(participant_id)
-    # - QuizQuestionnaire#taken_by?(participant)
-    def find_or_create_quiz_map(participant:, review_map:, quiz_questionnaire:)
-      existing = nil
-
-      if quiz_questionnaire.taken_by?(participant)
-        existing = QuizResponseMap
-          .mappings_for_reviewer(participant.id)
-          .find_by(
-            reviewed_object_id: quiz_questionnaire.id,
-            reviewee_id: review_map.reviewee_id
-          )
-      end
+    # Reuses existing map lookup logic centralized in map models.
+    # This avoids requiring the questionnaire instance to be a specific STI subclass.
+    def find_or_create_quiz_map(participant:, reviewee_id:, quiz_questionnaire:)
+      existing = QuizResponseMap
+        .mappings_for_reviewer(participant.id)
+        .find_by(
+          reviewed_object_id: quiz_questionnaire.id,
+          reviewee_id: reviewee_id
+        )
 
       return existing if existing.present?
 
       # find_or_create_by! keeps this idempotent across repeated "start task" calls.
       QuizResponseMap.find_or_create_by!(
         reviewer_id: participant.id,
-        reviewee_id: review_map.reviewee_id,
+        reviewee_id: reviewee_id,
         reviewed_object_id: quiz_questionnaire.id,
         type: 'QuizResponseMap'
       )

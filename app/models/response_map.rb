@@ -6,7 +6,9 @@ class ResponseMap < ApplicationRecord
   has_many :responses, foreign_key: 'map_id', dependent: :destroy, inverse_of: false
   belongs_to :reviewer, class_name: 'Participant', foreign_key: 'reviewer_id', inverse_of: false
   belongs_to :reviewee, class_name: 'Participant', foreign_key: 'reviewee_id', inverse_of: false
-  belongs_to :assignment, class_name: 'Assignment', foreign_key: 'reviewed_object_id', inverse_of: false
+  # reviewed_object_id points to Assignment for review maps and Questionnaire for quiz maps.
+  # Keep this optional at the base class so STI subtypes can use different target models.
+  belongs_to :assignment, class_name: 'Assignment', foreign_key: 'reviewed_object_id', inverse_of: false, optional: true
 
   alias map_id id
 
